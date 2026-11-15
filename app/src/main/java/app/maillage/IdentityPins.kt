@@ -16,5 +16,7 @@ class IdentityPins(private val capacity: Int = 2_000) {
         return true
     }
 
+    fun keyFor(tag: String): ByteArray? = pins[tag]?.copyOf()
+
     fun clear() = pins.clear()
 }

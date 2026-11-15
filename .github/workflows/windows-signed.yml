@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Récupérer le code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Installer Java pour les tests
@@ -25,9 +25,9 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Installer Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
-          python-version: '3.12.11'
+          python-version: '3.12'
           cache: pip
           cache-dependency-path: desktop/requirements.txt
       - name: Installer les dépendances
@@ -41,7 +41,7 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Construire le programme Windows
         working-directory: desktop
-        run: python -m PyInstaller --noconfirm --clean --windowed --onedir --collect-submodules bleak --name Maillage-PC main.py
+        run: python -m PyInstaller --noconfirm --clean --windowed --onedir --collect-submodules bleak --collect-all coincurve --name Maillage-PC main.py
       - name: Signer et vérifier l’exécutable
         shell: pwsh
         env:
@@ -59,7 +59,7 @@ jobs:
           python -m pip freeze | Out-File -FilePath output-desktop/DEPENDENCIES.txt -Encoding utf8
           if ($LASTEXITCODE -ne 0) { throw 'Impossible de lister les dépendances' }
       - name: Publier le programme signé
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Maillage-PC-Windows-signe-${{ github.sha }}
           path: output-desktop/

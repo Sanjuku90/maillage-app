@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Récupérer le code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Installer Java 17
@@ -39,7 +39,7 @@ jobs:
       - name: Installer la plateforme et les outils Android
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Installer Gradle 8.11.1
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.11.1'
       - name: Compiler et tester
@@ -70,7 +70,7 @@ jobs:
           echo 'APK de test signé avec une clé de debug; release non signée.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Résultat lint : ${{ steps.lint.outcome }}. Voir les rapports et corriger les erreurs avant diffusion.' >> "$GITHUB_STEP_SUMMARY"
       - name: Publier les APK de build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Maillage-Android-${{ github.sha }}
           path: output-android/
@@ -78,7 +78,7 @@ jobs:
           retention-days: 14
       - name: Publier les rapports de tests et lint
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Maillage-Android-rapports-${{ github.sha }}
           path: |
@@ -95,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: actions/setup-java@v5
@@ -106,7 +106,7 @@ jobs:
         with:
           packages: 'platform-tools'
       - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.11.1'
       - name: Vérifier les secrets et créer le keystore temporaire
@@ -147,7 +147,7 @@ jobs:
         shell: bash
         run: rm -f "$RUNNER_TEMP/maillage-release.jks"
       - name: Publier l’APK signé
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Maillage-Android-release-signe-${{ github.sha }}
           path: output-signed/

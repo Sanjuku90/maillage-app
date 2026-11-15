@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Trois nœuds reliés : le maillage. Tout reste dans la zone sûre (66 dp centrés). -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineJoin="round"
+        android:pathData="M54,38L38,68L70,68Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,38a6,6 0 1,0 12,0a6,6 0 1,0 -12,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,68a6,6 0 1,0 12,0a6,6 0 1,0 -12,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,68a6,6 0 1,0 12,0a6,6 0 1,0 -12,0" />
+</vector>

@@ -50,8 +50,30 @@ private fun aead(enc: Boolean, k: ByteArray, n: Long, ad: ByteArray, inp: ByteAr
     return out.copyOf(l)
 }
 
-/** Noise_XX_25519_ChaChaPoly_SHA256 : -> e | <- e, ee, s, es | -> s, se (authentification mutuelle). */
-class Handshake(private val init: Boolean, private val sPriv: ByteArray, private val sPub: ByteArray) {
+/** Noise_XX_25519_ChaChaPoly_SHA256 : -> e | <- e, ee, s, es | -> s, se. */
+class Handshake private constructor(
+    private val init: Boolean,
+    private val sPriv: ByteArray,
+    private val sPub: ByteArray,
+    private val ephemeralGenerator: () -> Pair<ByteArray, ByteArray>,
+    prologue: ByteArray
+) {
+    /** Production sessions always use a fresh random ephemeral and the existing empty prologue. */
+    constructor(init: Boolean, sPriv: ByteArray, sPub: ByteArray) :
+        this(init, sPriv, sPub, { Dh.gen() }, ByteArray(0))
+
+    /** Fixed ephemeral and prologue for reproducible public test vectors only. */
+    internal constructor(init: Boolean, sPriv: ByteArray, sPub: ByteArray, testEphemeral: ByteArray, testPrologue: ByteArray) :
+        this(init, sPriv, sPub, fixedGenerator(testEphemeral), testPrologue.copyOf())
+
+    private companion object {
+        fun fixedGenerator(privateKey: ByteArray): () -> Pair<ByteArray, ByteArray> {
+            require(privateKey.size == 32) { "clé éphémère invalide" }
+            val fixed = privateKey.copyOf()
+            return { fixed.copyOf() to Dh.pub(fixed) }
+        }
+    }
+
     private var h: ByteArray
     private var ck: ByteArray
     private var k: ByteArray? = null
@@ -63,14 +85,14 @@ class Handshake(private val init: Boolean, private val sPriv: ByteArray, private
     init {
         val nb = "Noise_XX_25519_ChaChaPoly_SHA256".toByteArray()
         h = if (nb.size <= 32) nb.copyOf(32) else sha(nb); ck = h.copyOf()
-        mixHash(ByteArray(0))
+        mixHash(prologue)
     }
 
     private fun mixHash(d: ByteArray) { h = sha(h + d) }
     private fun mixKey(ikm: ByteArray) { val (a, b) = hkdf(ck, ikm); ck = a; k = b; n = 0 }
     private fun encH(pt: ByteArray): ByteArray { val kk = k; val c = if (kk == null) pt else aead(true, kk, n++, h, pt); mixHash(c); return c }
     private fun decH(ct: ByteArray): ByteArray { val kk = k; val p = if (kk == null) ct else aead(false, kk, n++, h, ct); mixHash(ct); return p }
-    private fun genE() { val (a, b) = Dh.gen(); ePriv = a; ePub = b }
+    private fun genE() { val (a, b) = ephemeralGenerator(); ePriv = a; ePub = b }
 
     fun write(payload: ByteArray): ByteArray {
         val o = ByteArrayOutputStream()
@@ -138,6 +160,6 @@ object SelfTest {
         val bad = ti.enc("x".toByteArray()); bad[bad.size - 1] = (bad[bad.size - 1].toInt() xor 1).toByte()
         check(runCatching { tr.dec(bad) }.isFailure) { "Message modifié accepté" }
         check(String(ti.dec(tr.enc("retour".toByteArray()))) == "retour") { "Message privé retour" }
-        "✅ Tout est OK : Argon2id, Noise XX (X25519 + ChaCha20-Poly1305), anti-rejeu, détection de modification."
+        "✅ Tests locaux réussis : Argon2id, Noise XX, anti-rejeu et détection de modification. Ce résultat n’est ni un audit ni une preuve de compatibilité."
     } catch (e: Throwable) { "❌ Échec : ${e.message}" }
 }

@@ -15,15 +15,15 @@ class MeshKeepaliveService : Service() {
         super.onCreate()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel(CHANNEL, "Maillage actif", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Indique que le maillage choisi par l’utilisateur reste actif"
+            manager.createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.notif_title), NotificationManager.IMPORTANCE_LOW).apply {
+                description = getString(R.string.notif_channel_desc)
                 setShowBadge(false)
             })
         }
         val notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
-            .setContentTitle("Maillage actif")
-            .setContentText("Le maillage continue en arrière-plan. Appuie sur Quitter pour l’arrêter.")
+            .setContentTitle(getString(R.string.notif_title))
+            .setContentText(getString(R.string.notif_text))
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

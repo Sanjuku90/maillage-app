@@ -17,7 +17,6 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -86,7 +85,7 @@ class MainActivity : Activity() {
             }
             if (!m.me) b.addView(tv(m.name, 12f, Color.HSVToColor(floatArrayOf(((m.name.hashCode() and 0x7fffffff) % 360).toFloat(), 0.55f, 0.75f)), true).apply { maxWidth = maxW })
             b.addView(tv(m.text, 16f, if (m.me) c(R.color.onAccent) else c(R.color.ink)).apply { maxWidth = maxW })
-            val meta = fmt.format(Date(m.time)) + (if (m.me) "" else " · " + (if (m.hops == 0) "direct" else "${m.hops} saut${if (m.hops > 1) "s" else ""}")) + (if (m.chat.isNotEmpty()) " · 🔒" else "")
+            val meta = fmt.format(Date(m.time)) + (if (m.me) " · " + getString(R.string.unconfirmed) else " · " + (if (m.hops == 0) getString(R.string.hops_direct) else if (m.hops > 1) getString(R.string.hops_many, m.hops) else getString(R.string.hops_one, m.hops))) + (if (m.chat.isNotEmpty()) " · 🔒" else "")
             b.addView(tv(meta, 11f, if (m.me) 0xCCFFFFFF.toInt() else c(R.color.mute)).apply { gravity = Gravity.END })
             row.addView(b)
             return row
@@ -95,7 +94,6 @@ class MainActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         val root = FrameLayout(this).apply { fitsSystemWindows = true }
         joinV = buildJoin(); chatV = buildChat().apply { visibility = View.GONE }
         root.addView(joinV); root.addView(chatV)
@@ -156,7 +154,7 @@ class MainActivity : Activity() {
             runCatching { stopService(Intent(this, MeshKeepaliveService::class.java)) }
             runCatching { torManager?.stop() }; torManager = null
             chatV.visibility = View.GONE; joinV.visibility = View.VISIBLE
-            toast("Reconnexion impossible : rejoins le canal manuellement")
+            toast(getString(R.string.rejoin_failed))
         }
     }
 
@@ -166,38 +164,38 @@ class MainActivity : Activity() {
             hint = h; setText(v); setSingleLine(); setTextColor(c(R.color.ink)); setHintTextColor(c(R.color.mute))
             background = round(c(R.color.surface), 14); setPadding(dp(16), dp(14), dp(16), dp(14))
         }
-        nameF = field("Ton pseudo (12 max)", prefs.getString("name", "") ?: "").apply { filters = arrayOf(InputFilter.LengthFilter(12)) }
-        pwF = field("Mot de passe du canal (8 caractères min.)", dec(prefs.getString("pw", null))).apply {
+        nameF = field(getString(R.string.hint_nickname), prefs.getString("name", "") ?: "").apply { filters = arrayOf(InputFilter.LengthFilter(12)) }
+        pwF = field(getString(R.string.hint_password), dec(prefs.getString("pw", null))).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             typeface = Typeface.DEFAULT
         }
         awareCheck = CheckBox(this).apply {
-            text = "Wi-Fi Aware local (si compatible)"; isChecked = prefs.getBoolean("aware", true)
+            text = getString(R.string.opt_aware); isChecked = prefs.getBoolean("aware", true)
             setTextColor(c(R.color.ink)); isEnabled = packageManager.hasSystemFeature("android.hardware.wifi.aware")
             if (!isEnabled) isChecked = false
         }
         nostrCheck = CheckBox(this).apply {
-            text = "Relais Nostr sur Internet"; isChecked = prefs.getBoolean("nostr", false); setTextColor(c(R.color.ink))
+            text = getString(R.string.opt_nostr); isChecked = prefs.getBoolean("nostr", false); setTextColor(c(R.color.ink))
         }
         torCheck = CheckBox(this).apply {
-            text = "Forcer Nostr via Tor (plus lent)"; isChecked = prefs.getBoolean("tor", false); setTextColor(c(R.color.ink)); isEnabled = nostrCheck.isChecked
+            text = getString(R.string.opt_tor); isChecked = prefs.getBoolean("tor", false); setTextColor(c(R.color.ink)); isEnabled = nostrCheck.isChecked
         }
         nostrCheck.setOnCheckedChangeListener { _, enabled ->
             torCheck.isEnabled = enabled
             if (!enabled) torCheck.isChecked = false
         }
-        val go = tv("Rejoindre le maillage", 16f, c(R.color.onAccent), true).apply {
+        val go = tv(getString(R.string.join), 16f, c(R.color.onAccent), true).apply {
             gravity = Gravity.CENTER; setPadding(0, dp(14), 0, dp(14)); background = round(c(R.color.accent), 14); setOnClickListener { tryJoin() }
         }
-        l.put(tv("Maillage", 34f, c(R.color.ink), true))
-        l.put(tv("Messages de téléphone en téléphone, avec ou sans Internet.", 15f, c(R.color.mute)), 6)
+        l.put(tv(getString(R.string.app_name), 34f, c(R.color.ink), true))
+        l.put(tv(getString(R.string.tagline), 15f, c(R.color.mute)), 6)
         l.put(nameF, 24); l.put(pwF, 10)
         l.put(awareCheck, 10); l.put(nostrCheck, 2); l.put(torCheck, 2)
-        l.put(tv("Les relais voient une clé publique, les heures et l’identifiant du canal, mais reçoivent des trames chiffrées. Tor est facultatif.", 12f, c(R.color.mute)), 4)
+        l.put(tv(getString(R.string.relay_privacy), 12f, c(R.color.mute)), 4)
         l.put(go, 16)
-        l.put(tv("Tester le chiffrement", 14f, c(R.color.accent)).apply { setOnClickListener { Thread { val r = SelfTest.run(); runOnUiThread { android.app.AlertDialog.Builder(this@MainActivity).setMessage(r).setPositiveButton("OK", null).show() } }.start() } }, 18)
-        l.put(tv("Même mot de passe du canal sur tous les téléphones. Choisis-en un long et unique.", 13f, c(R.color.mute)), 10)
-        l.put(tv("Effacer toutes les données de Maillage", 13f, c(R.color.mute)).apply {
+        l.put(tv(getString(R.string.selftest), 14f, c(R.color.accent)).apply { setOnClickListener { Thread { val r = SelfTest.run(); runOnUiThread { android.app.AlertDialog.Builder(this@MainActivity).setMessage(r).setPositiveButton(getString(R.string.ok), null).show() } }.start() } }, 18)
+        l.put(tv(getString(R.string.same_password), 13f, c(R.color.mute)), 10)
+        l.put(tv(getString(R.string.wipe_all), 13f, c(R.color.mute)).apply {
             setOnClickListener { confirmReset() }
         }, 22)
         return ScrollView(this).apply { isFillViewport = true; addView(l) }
@@ -206,15 +204,21 @@ class MainActivity : Activity() {
     private fun buildChat(): View {
         val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val bar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(10), dp(16), dp(10)) }
-        bar.addView(tv("Maillage", 22f, c(R.color.ink), true), LinearLayout.LayoutParams(0, WC, 1f))
+        bar.addView(tv(getString(R.string.app_name), 22f, c(R.color.ink), true), LinearLayout.LayoutParams(0, WC, 1f))
         pill = tv("", 13f, c(R.color.mute)).apply { setPadding(dp(12), dp(6), dp(12), dp(6)); background = round(c(R.color.surface), 16) }
         bar.addView(pill)
-        bar.addView(tv("Effacer", 14f, c(R.color.mute)).apply { setPadding(dp(10), dp(6), 0, dp(6)); setOnClickListener { msgs.removeAll { it.chat == cur }; save(); refresh() } })
-        bar.addView(tv("Quitter", 14f, c(R.color.accent)).apply { setPadding(dp(14), dp(6), 0, dp(6)); setOnClickListener { leave() } })
+        bar.addView(tv(getString(R.string.clear), 14f, c(R.color.mute)).apply { setPadding(dp(10), dp(6), 0, dp(6)); setOnClickListener { msgs.removeAll { it.chat == cur }; save(); refresh() } })
+        bar.addView(tv(getString(R.string.quit), 14f, c(R.color.accent)).apply { setPadding(dp(14), dp(6), 0, dp(6)); setOnClickListener { leave() } })
         l.addView(bar)
-        idV = tv("", 12f, c(R.color.mute)).apply { setPadding(dp(16), 0, dp(16), dp(4)) }
+        idV = tv("", 12f, c(R.color.mute)).apply {
+            setPadding(dp(16), 0, dp(16), dp(4))
+            setOnClickListener { showFingerprint(null) }
+        }
         l.addView(idV)
-        l.addView(tv("Réinitialiser Maillage", 12f, c(R.color.mute)).apply {
+        l.addView(tv(getString(R.string.fp_help), 12f, c(R.color.mute)).apply {
+            setPadding(dp(16), 0, dp(16), dp(4))
+        })
+        l.addView(tv(getString(R.string.reset_app), 12f, c(R.color.mute)).apply {
             setPadding(dp(16), 0, dp(16), dp(4)); setOnClickListener { confirmReset() }
         })
         transportStatus = tv("", 12f, c(R.color.mute)).apply { setPadding(dp(16), 0, dp(16), dp(4)) }
@@ -226,17 +230,17 @@ class MainActivity : Activity() {
             divider = null; dividerHeight = 0; clipToPadding = false; setPadding(0, dp(4), 0, dp(8))
             setSelector(ColorDrawable(Color.TRANSPARENT)); adapter = bubbles
         }
-        val empty = tv("Aucun message pour l’instant.\nÉcris le premier : il saute de téléphone en téléphone.", 15f, c(R.color.mute)).apply { gravity = Gravity.CENTER; setPadding(dp(32), 0, dp(32), 0) }
+        val empty = tv(getString(R.string.empty_chat), 15f, c(R.color.mute)).apply { gravity = Gravity.CENTER; setPadding(dp(32), 0, dp(32), 0) }
         fl.addView(list, FrameLayout.LayoutParams(MP, MP)); fl.addView(empty, FrameLayout.LayoutParams(MP, MP))
         list.emptyView = empty
         l.addView(fl, LinearLayout.LayoutParams(MP, 0, 1f))
         val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(10)) }
         input = EditText(this).apply {
-            hint = "Message"; setHintTextColor(c(R.color.mute)); setTextColor(c(R.color.ink)); maxLines = 4
+            hint = getString(R.string.hint_message); setHintTextColor(c(R.color.mute)); setTextColor(c(R.color.ink)); maxLines = 4
             background = round(c(R.color.surface), 24); setPadding(dp(16), dp(10), dp(16), dp(10)); filters = arrayOf(InputFilter.LengthFilter(100))
         }
         row.addView(input, LinearLayout.LayoutParams(0, WC, 1f))
-        row.addView(tv("↑", 22f, c(R.color.onAccent), true).apply { gravity = Gravity.CENTER; background = round(c(R.color.accent), 24); setOnClickListener { send() } },
+        row.addView(tv("↑", 22f, c(R.color.onAccent), true).apply { contentDescription = getString(R.string.send); gravity = Gravity.CENTER; background = round(c(R.color.accent), 24); setOnClickListener { send() } },
             LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(8) })
         l.addView(row)
         return l
@@ -246,16 +250,16 @@ class MainActivity : Activity() {
         val requested = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= 31) {
             requested += listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
-        } else requested += Manifest.permission.ACCESS_FINE_LOCATION
+        } else requested += listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         if (awareCheck.isChecked) {
             if (Build.VERSION.SDK_INT >= 33) requested += Manifest.permission.NEARBY_WIFI_DEVICES
-            else if (Build.VERSION.SDK_INT >= 31) requested += Manifest.permission.ACCESS_FINE_LOCATION
+            else if (Build.VERSION.SDK_INT >= 31) requested += listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         }
         return requested.distinct().toTypedArray()
     }
 
     private fun tryJoin() {
-        if (pwF.text.toString().length < 8) return toast("Mot de passe : 8 caractères minimum")
+        if (pwF.text.toString().length < 8) return toast(getString(R.string.err_password_short))
         if (perms().all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) begin() else requestPermissions(perms(), 1)
     }
 
@@ -266,7 +270,7 @@ class MainActivity : Activity() {
             Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT
         ) else listOf(Manifest.permission.ACCESS_FINE_LOCATION)
         if (!bluetooth.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
-            toast("Permissions Bluetooth refusées")
+            toast(getString(R.string.err_bt_denied))
             return
         }
         if (awareCheck.isChecked) {
@@ -274,7 +278,7 @@ class MainActivity : Activity() {
                                   else Manifest.permission.ACCESS_FINE_LOCATION
             if (checkSelfPermission(awarePermission) != PackageManager.PERMISSION_GRANTED) {
                 awareCheck.isChecked = false
-                toast("Wi-Fi Aware désactivé, le Bluetooth reste actif")
+                toast(getString(R.string.aware_disabled))
             }
         }
         begin()
@@ -282,14 +286,14 @@ class MainActivity : Activity() {
 
     private fun begin() {
         val bt = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
-        if (bt == null || !bt.isEnabled) return toast("Active le Bluetooth")
+        if (bt == null || !bt.isEnabled) return toast(getString(R.string.enable_bt))
         myName = nameF.text.toString().replace("#", "").trim().ifBlank { "Anon" + (100..999).random() }
         val pw = pwF.text.toString()
         prefs.edit().putString("name", myName).putString("pw", Vault.enc(pw))
             .putBoolean("aware", awareCheck.isChecked).putBoolean("nostr", nostrCheck.isChecked).putBoolean("tor", torCheck.isChecked).apply()
         if (nostrCheck.isChecked && torCheck.isChecked) {
             startJoined(pw, null, false)
-            transportStatus.text = "Tor démarre… le BLE et Wi-Fi Aware restent actifs"
+            transportStatus.text = getString(R.string.tor_starting)
             val activeMesh = mesh ?: return
             val manager = TorManager(this); torManager = manager
             Thread {
@@ -298,10 +302,10 @@ class MainActivity : Activity() {
                     if (mesh !== activeMesh) { manager.stop(); return@runOnUiThread }
                     if (port.isSuccess) {
                         activeMesh.enableNostr(nostrKey(), port.getOrNull())
-                        transportStatus.text = "Tor prêt; relais Nostr forcés via Tor"
+                        transportStatus.text = getString(R.string.tor_ready)
                     } else {
                         manager.stop(); torManager = null
-                        transportStatus.text = "Tor indisponible; Internet désactivé, aucun repli direct"
+                        transportStatus.text = getString(R.string.tor_unavailable)
                     }
                 }
             }.start()
@@ -325,8 +329,8 @@ class MainActivity : Activity() {
         )
         mesh = nextMesh
         nextMesh.start()
-        idV.text = "Ton identifiant : $myName#${mesh!!.tag}"
-        transportStatus.text = if (internetEnabled) "Internet : relais Nostr" else "Internet : désactivé"
+        idV.text = getString(R.string.your_id, myName, mesh!!.tag)
+        transportStatus.text = if (internetEnabled) getString(R.string.net_nostr) else getString(R.string.net_off)
         setPeers(0); cur = ""; refresh(); chips()
         joinV.visibility = View.GONE; chatV.visibility = View.VISIBLE
     }
@@ -339,17 +343,17 @@ class MainActivity : Activity() {
 
     private fun confirmReset() {
         android.app.AlertDialog.Builder(this)
-            .setTitle("Effacer les données locales ?")
-            .setMessage("Cela arrête Maillage et supprime l’historique, les mots de passe et les identités enregistrés sur ce téléphone. C’est irréversible et ne supprime rien chez les destinataires ni sur les relais.")
-            .setNegativeButton("Annuler", null)
-            .setPositiveButton("Tout effacer") { _, _ ->
+            .setTitle(getString(R.string.reset_title))
+            .setMessage(getString(R.string.reset_message))
+            .setNegativeButton(getString(R.string.cancel), null)
+            .setPositiveButton(getString(R.string.reset_confirm)) { _, _ ->
                 leave()
                 msgs.clear(); people = emptyList(); names.clear(); unread.clear(); cur = ""
                 val prefsCleared = prefs.edit().clear().commit()
                 val identityRemoved = runCatching { Ident.reset() }.isSuccess
                 val vaultRemoved = runCatching { Vault.reset() }.isSuccess
                 nameF.setText(""); pwF.setText(""); refresh()
-                toast(if (prefsCleared && identityRemoved && vaultRemoved) "Données locales supprimées" else "Effacement incomplet : réessaie")
+                toast(if (prefsCleared && identityRemoved && vaultRemoved) getString(R.string.reset_done) else getString(R.string.reset_partial))
             }.show()
     }
 
@@ -359,11 +363,18 @@ class MainActivity : Activity() {
         if (t.isEmpty() || now - lastSend < 800) return
         val ok = if (cur == "") mesh?.send(t) == true else mesh?.sendPrivate(cur, t) == true
         if (ok) { add(Msg(myName, t, 0, true, now, cur)); input.setText(""); lastSend = now }
-        else toast(if (cur == "") "Message trop long ou erreur d’envoi" else "Contact hors ligne ou message trop long")
+        else {
+            val state = if (cur.isNotEmpty()) mesh?.verificationState(cur) else null
+            toast(when (state) {
+                ContactVerification.CHANGED -> getString(R.string.err_identity_changed)
+                ContactVerification.UNAVAILABLE -> getString(R.string.err_identity_unavailable)
+                else -> if (cur == "") getString(R.string.err_send) else getString(R.string.err_send_private)
+            })
+        }
     }
 
     private fun setPeers(n: Int) {
-        pill.text = "● $n voisin" + if (n > 1) "s" else ""
+        pill.text = if (n > 1) getString(R.string.peers_many, n) else getString(R.string.peers_one, n)
         pill.setTextColor(if (n > 0) c(R.color.ok) else c(R.color.mute))
     }
 
@@ -375,8 +386,50 @@ class MainActivity : Activity() {
 
     private fun refresh() {
         shown = msgs.filter { it.chat == cur }
-        input.hint = if (cur == "") "Message au canal" else "Message privé 🔒"
+        input.hint = if (cur == "") getString(R.string.hint_channel) else getString(R.string.hint_private)
         bubbles.notifyDataSetChanged(); list.setSelection(shown.size)
+    }
+
+    private fun showFingerprint(peerTag: String?) {
+        val active = mesh ?: return
+        val fingerprint = if (peerTag == null) {
+            runCatching { active.ownFingerprint() }.getOrNull()
+        } else active.peerFingerprint(peerTag)
+        val label = if (peerTag == null) getString(R.string.fp_own) else getString(R.string.fp_of, names[peerTag] ?: peerTag)
+        if (peerTag == null) {
+            android.app.AlertDialog.Builder(this).setTitle(label)
+                .setMessage(if (fingerprint == null) getString(R.string.fp_unavailable) else getString(R.string.fp_compare_hint, fingerprint))
+                .setPositiveButton(getString(R.string.close), null).show()
+            return
+        }
+        val state = active.verificationState(peerTag)
+        val saved = active.savedPeerFingerprint(peerTag)
+        val explanation = when (state) {
+            ContactVerification.UNAVAILABLE -> getString(R.string.fp_state_unavailable)
+            ContactVerification.CHANGED -> getString(R.string.fp_state_changed, saved ?: getString(R.string.unavailable), fingerprint ?: getString(R.string.unavailable))
+            ContactVerification.VERIFIED -> getString(R.string.fp_state_verified, fingerprint)
+            ContactVerification.UNVERIFIED -> getString(R.string.fp_state_unverified, fingerprint)
+        }
+        val dialog = android.app.AlertDialog.Builder(this).setTitle(label).setMessage(explanation).setPositiveButton(getString(R.string.close), null)
+        when (state) {
+            ContactVerification.UNVERIFIED -> if (fingerprint != null) dialog.setNeutralButton(getString(R.string.fp_compared)) { _, _ ->
+                if (mesh === active && active.verifyPeer(peerTag, fingerprint)) {
+                    toast(getString(R.string.fp_saved)); chips()
+                } else toast(getString(R.string.fp_not_saved))
+            }
+            ContactVerification.VERIFIED, ContactVerification.CHANGED -> dialog.setNeutralButton(getString(R.string.unverify)) { _, _ ->
+                android.app.AlertDialog.Builder(this).setTitle(getString(R.string.unverify_title))
+                    .setMessage(getString(R.string.unverify_message))
+                    .setNegativeButton(getString(R.string.cancel), null)
+                    .setPositiveButton(getString(R.string.remove)) { _, _ ->
+                        if (mesh === active && active.forgetPeerVerification(peerTag)) {
+                            toast(getString(R.string.unverified_done)); chips()
+                        } else toast(getString(R.string.unverify_failed))
+                    }.show()
+            }
+            ContactVerification.UNAVAILABLE -> Unit
+        }
+        dialog.show()
     }
 
     private fun chips() {
@@ -386,12 +439,21 @@ class MainActivity : Activity() {
             chipsRow.addView(tv(label + if (n > 0) " ($n)" else "", 14f, if (sel) c(R.color.onAccent) else c(R.color.ink)).apply {
                 setPadding(dp(14), dp(7), dp(14), dp(7)); background = round(if (sel) c(R.color.accent) else c(R.color.surface), 18)
                 setOnClickListener { cur = id; unread.remove(id); chips(); refresh() }
+                if (id.isNotEmpty()) setOnLongClickListener { showFingerprint(id); true }
             }, LinearLayout.LayoutParams(WC, WC).apply { rightMargin = dp(8) })
         }
-        chip("", "Canal")
-        people.forEach { names[it.tag] = it.name + "#" + it.tag; chip(it.tag, it.name + "#" + it.tag) }
+        chip("", getString(R.string.channel))
+        people.forEach {
+            names[it.tag] = it.name + "#" + it.tag
+            val mark = when (mesh?.verificationState(it.tag)) {
+                ContactVerification.VERIFIED -> " ✓"
+                ContactVerification.CHANGED -> " ⚠"
+                else -> ""
+            }
+            chip(it.tag, it.name + "#" + it.tag + mark)
+        }
         val on = people.map { it.tag }.toSet()
-        names.keys.filter { it !in on && (msgs.any { m -> m.chat == it } || it == cur) }.forEach { chip(it, (names[it] ?: it) + " (hors ligne)") }
+        names.keys.filter { it !in on && (msgs.any { m -> m.chat == it } || it == cur) }.forEach { chip(it, (names[it] ?: it) + " " + getString(R.string.offline_suffix)) }
     }
 
     private fun nostrKey(): String {

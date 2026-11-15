@@ -12,6 +12,8 @@ Cette modification Android a été préparée à partir du code source sans comp
 
 ## Fonctionnalités incluses
 
+- **Premières améliorations Android** : indications de livraison non confirmée, avertissements sur certains échecs Bluetooth, empreintes comparables avec vérification manuelle persistante et cache local chiffré pour une reprise Bluetooth au mieux des trames de groupe. Aucun accusé de réception, audit ou test sur appareils n'est encore fourni. Détails et limites dans `ETAT-ET-SUITE.md`.
+- **Tests et temporisation** : un test Noise avec un vecteur public et une limitation d'attente des écritures Bluetooth ont été ajoutés. Les tests Kotlin et le build n'ont pas été exécutés ; voir `ETAT-ET-SUITE.md`.
 - **BLE mesh**: découverte et relais multi-sauts, plafond de 16 sauts (ce n’est pas une garantie de portée), fragmentation/réassemblage quand le MTU BLE est petit, déduplication et files bornées.
 - **Wi-Fi Aware**: découverte locale et transport de trames chiffrées par petits fragments, seulement si le téléphone le prend en charge. Le BLE reste actif en secours.
 - **Nostr**: publication et réception de trames déjà chiffrées sur trois relais publics. Les événements sont signés BIP-340 via secp256k1 et filtrés par empreinte de canal. Tor peut forcer le trafic Nostr à travers Arti; en cas d’échec de Tor, l’app ne revient pas en connexion directe.

@@ -22,4 +22,14 @@ class IdentityPinsTest {
         assertTrue(pins.checkAndRemember("b", key))
         assertTrue(pins.checkAndRemember("a", key)) // old entry evicted
     }
+
+    @Test fun exportedKeyCannotMutateThePin() {
+        val pins = IdentityPins()
+        val key = ByteArray(65) { 7 }
+        assertTrue(pins.checkAndRemember("peer", key))
+        val exported = pins.keyFor("peer")!!
+        exported[0] = 0
+        assertTrue(pins.checkAndRemember("peer", key))
+        assertNull(pins.keyFor("unknown"))
+    }
 }

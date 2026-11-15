@@ -16,6 +16,10 @@ Tor est facultatif. S’il est choisi, le WebSocket Nostr n’est créé qu’ap
 
 Le mot de passe du canal, l’identité Nostr et l’historique local sont chiffrés avec une clé Android Keystore. Les sauvegardes Android sont désactivées. Les identités peuvent être perdues lors d’une réinstallation ou d’une réinitialisation de l’appareil.
 
+Le cache Android des trames de groupe est également conservé chiffré avec la clé Keystore, avec une limite de 60 trames et une durée de reprise d'une heure. Il peut contenir des trames à relayer, sans garantir leur livraison. Il est purgé lors des vérifications d'expiration lorsque l'application est active ou redémarre, pas nécessairement à l'heure exacte si elle reste fermée. Effacer l'historique d'une conversation ne supprime pas ce cache ; la réinitialisation locale efface les préférences et la clé associée. L'effacement physique du support n'est pas garanti.
+
+Les empreintes des contacts que l'utilisateur marque explicitement comme vérifiés sont conservées chiffrées localement, ainsi que les alertes de changement détectées. Le stockage est limité à 100 contacts ; une réinitialisation locale supprime ces données et la clé associée. Une comparaison manuelle ne garantit pas que le reste du protocole ou l'appareil soit sûr.
+
 ## Mesures de prudence
 
 Aucune télémétrie n’est intégrée volontairement. Cette version expérimentale n’a pas encore été auditée ni testée sur une matrice complète d’appareils. Ne l’utilise pas pour des informations dont la confidentialité est critique ou pour une urgence.

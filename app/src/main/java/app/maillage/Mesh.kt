@@ -67,7 +67,8 @@ class Mesh(
     // A short tag is only a routing hint, not proof of identity. Pin the full key
     // for the lifetime of this mesh session and reject ambiguous short-tag collisions.
     private val identityPins = IdentityPins(MAX_SEEN_IDS)
-    private val store = ArrayDeque<Pair<Long, ByteArray>>()
+    private val verifiedContacts = VerifiedContacts(ctx, onTransportStatus)
+    private val store = EncryptedFrameCache(ctx, channelTag, onTransportStatus)
     private val peers = HashMap<String, Peer>()
     private val connecting = HashSet<String>()
     private val mtus = HashMap<String, Int>()
@@ -81,16 +82,26 @@ class Mesh(
     private val serverQueue = ArrayDeque<ServerNotification>()
     private var serverInFlight: ServerNotification? = null
 
+    init {
+        // Avoid processing our own restored cached frames as fresh messages on this run.
+        store.snapshot().forEach { frame ->
+            val id = runCatching { JSONObject(String(frame, Charsets.UTF_8)).optString("i") }.getOrDefault("")
+            if (id.matches(Regex("[0-9a-f]{16}"))) remember(id)
+        }
+    }
+
     private class ServerNotification(val address: String, val bytes: ByteArray)
     private class BleAssembly(val count: Int, val parts: Array<ByteArray?>, val created: Long, var bytes: Int = 0)
 
     inner class Peer(val g: BluetoothGatt, val c: BluetoothGattCharacteristic, val mtu: Int) {
-        val q = ArrayDeque<ByteArray>(); var busy = false
+        val q = ArrayDeque<ByteArray>()
+        internal val writeGate = BleWriteGate()
     }
 
     private val tick = object : Runnable {
         override fun run() {
             announce()
+            store.snapshot() // Prune expired stored frames while the mesh is active.
             val now = System.currentTimeMillis()
             if (people.values.removeAll { now - it.seen > 100_000 }) onPeople(people.values.toList())
             h.postDelayed(this, 30_000)
@@ -150,7 +161,7 @@ class Mesh(
         wifiAware?.stop(); wifiAware = null
         nostr?.stop(); nostr = null
         bleFragments.clear(); rate.clear(); seen.clear(); identityPins.clear()
-        pending.clear(); sess.clear(); people.clear(); store.clear()
+        pending.clear(); sess.clear(); people.clear(); store.close()
         noisePriv.fill(0); channelKey.fill(0)
         subscribers.clear(); serverMtu.clear(); serverQueue.clear(); serverInFlight = null; serverCharacteristic = null
         ctx.stopService(Intent(ctx, MeshKeepaliveService::class.java))
@@ -183,9 +194,43 @@ class Mesh(
     fun send(text: String) = emit(0, text.toByteArray())
     private fun announce() { emit(1, noisePub) }
 
+    /** Manual comparison only; an unknown or changed key is not silently marked trusted. */
+    fun ownFingerprint(): String = IdentityFingerprint.of(Ident.pub(), noisePub)
+
+    fun peerFingerprint(peerTag: String): String? {
+        val person = people[peerTag] ?: return null
+        val signing = identityPins.keyFor(peerTag) ?: return null
+        return runCatching { IdentityFingerprint.of(signing, person.pub) }.getOrNull()
+    }
+
+    internal fun verificationState(peerTag: String): ContactVerification =
+        verifiedContacts.state(peerTag, peerFingerprint(peerTag))
+
+    internal fun savedPeerFingerprint(peerTag: String): String? = verifiedContacts.savedFingerprint(peerTag)
+
+    internal fun verifyPeer(peerTag: String, shownFingerprint: String): Boolean {
+        val current = peerFingerprint(peerTag) ?: return false
+        if (current != shownFingerprint || verificationState(peerTag) != ContactVerification.UNVERIFIED) return false
+        return verifiedContacts.verify(peerTag, current)
+    }
+
+    internal fun forgetPeerVerification(peerTag: String): Boolean = verifiedContacts.forget(peerTag)
+
+    private fun privateIdentityAllowed(peerTag: String): Boolean {
+        val state = verificationState(peerTag)
+        if (ContactVerificationPolicy.permitsPrivateMessages(state)) return true
+        sess.remove(peerTag)
+        pending.remove(peerTag)
+        onTransportStatus(if (state == ContactVerification.CHANGED)
+            "Identité du contact modifiée : messages privés bloqués"
+        else "Identité du contact indisponible : messages privés bloqués")
+        return false
+    }
+
     // ---- messages privés (Noise XX) ----
     fun sendPrivate(to: String, text: String): Boolean {
         if (text.toByteArray().size > 100 || people[to] == null) return false
+        if (!privateIdentityAllowed(to)) return false
         val tr = sess[to]?.tr
         if (tr != null) return frame(to, 4, tr.enc(text.toByteArray()))
         if (pending.values.sumOf { it.size } >= 200) return false
@@ -221,6 +266,7 @@ class Mesh(
 
     private fun priv(from: String, who: String, stage: Int, data: ByteArray, hops: Int) {
         val person = people[from]
+        if (!privateIdentityAllowed(from)) return
         try {
             when (stage) {
                 1 -> {
@@ -302,18 +348,24 @@ class Mesh(
         when (type) {
             0 -> onMsg(m.name + "#" + m.tag, clean(String(d)), hops)
             1 -> if (d.size == 32 && m.tag != tag) {
-                val isNew = people[m.tag] == null
+                val previous = people[m.tag]
+                val isNew = previous == null
+                val keyChanged = previous != null && !MessageDigest.isEqual(previous.pub, d)
+                if (keyChanged) {
+                    sess.remove(m.tag)
+                    pending.remove(m.tag)
+                    onTransportStatus("Clé du contact modifiée : session privée interrompue")
+                }
                 people[m.tag] = Person(m.tag, m.name, d, System.currentTimeMillis())
-                if (isNew) { onPeople(people.values.toList()); h.postDelayed({ announce() }, 400) }
+                if (isNew || keyChanged) onPeople(people.values.toList())
+                if (isNew) h.postDelayed({ announce() }, 400)
             }
             2 -> if (d.size >= 4 && d.copyOfRange(0, 3).contentEquals(tagBytes)) priv(m.tag, m.name + "#" + m.tag, d[3].toInt(), d.copyOfRange(4, d.size), hops)
         }
     }
 
     private fun keep(b: ByteArray) {
-        val now = System.currentTimeMillis()
-        store.addLast(now to b)
-        while (store.size > 60 || (store.isNotEmpty() && now - store.first().first > 3_600_000)) store.removeFirst()
+        store.add(b)
     }
 
     private fun relay(b: ByteArray, except: String?, origin: String? = null, awareExcept: String? = null) {
@@ -328,9 +380,13 @@ class Mesh(
     }
 
     private fun enqueue(peer: Peer, frame: ByteArray) {
+        if (peer.writeGate.failed) return
         val maxWrite = (peer.mtu - 3).coerceAtLeast(20)
         val pieces = if (frame.size <= maxWrite) listOf(frame) else fragmentBle(frame, maxWrite)
-        if (pieces.isEmpty() || peer.q.size + pieces.size > MAX_QUEUED_FRAMES_PER_PEER) return
+        if (pieces.isEmpty() || peer.q.size + pieces.size > MAX_QUEUED_FRAMES_PER_PEER) {
+            onTransportStatus("Bluetooth : file saturée ou trame invalide, livraison non confirmée")
+            return
+        }
         pieces.forEach(peer.q::addLast)
         pump(peer)
     }
@@ -339,7 +395,10 @@ class Mesh(
         if (address !in subscribers) return
         val maxWrite = ((serverMtu[address] ?: 23) - 3).coerceAtLeast(20)
         val pieces = if (frame.size <= maxWrite) listOf(frame) else fragmentBle(frame, maxWrite)
-        if (pieces.isEmpty() || serverQueue.size + pieces.size > MAX_SERVER_QUEUE) return
+        if (pieces.isEmpty() || serverQueue.size + pieces.size > MAX_SERVER_QUEUE) {
+            onTransportStatus("Bluetooth PC : file saturée ou trame invalide, livraison non confirmée")
+            return
+        }
         pieces.forEach { serverQueue.addLast(ServerNotification(address, it)) }
         pumpServer()
     }
@@ -408,12 +467,33 @@ class Mesh(
     }
 
     private fun pump(p: Peer) {
-        while (!p.busy && p.q.isNotEmpty()) {
+        while (!p.writeGate.inFlight && !p.writeGate.failed && p.q.isNotEmpty()) {
             val b = p.q.removeFirst()
-            if (b.size > p.mtu - 3) continue
+            if (b.size > p.mtu - 3) {
+                p.writeGate.fail()
+                p.q.clear()
+                onTransportStatus("Bluetooth : fragment trop grand, livraison non confirmée")
+                runCatching { p.g.disconnect() }
+                return
+            }
             p.c.value = b
             p.c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            p.busy = p.g.writeCharacteristic(p.c)
+            val accepted = runCatching { p.g.writeCharacteristic(p.c) }.getOrDefault(false)
+            if (!accepted) {
+                p.writeGate.fail()
+                p.q.clear()
+                onTransportStatus("Bluetooth : écriture impossible, livraison non confirmée")
+                runCatching { p.g.disconnect() }
+                return
+            }
+            val ticket = p.writeGate.begin() ?: return
+            h.postDelayed({
+                if (p.writeGate.expire(ticket)) {
+                    p.q.clear()
+                    onTransportStatus("Bluetooth : écriture sans réponse, livraison non confirmée")
+                    runCatching { p.g.disconnect() }
+                }
+            }, 10_000)
         }
     }
 
@@ -477,7 +557,7 @@ class Mesh(
                 if (admitted && enable) {
                     h.postDelayed({
                         if (d.address in subscribers) {
-                            store.forEach { enqueueServer(d.address, it.second) }
+                            store.snapshot().forEach { enqueueServer(d.address, it) }
                             announce()
                         }
                     }, 500)
@@ -542,11 +622,22 @@ class Mesh(
             h.post {
                 if (c == null || peers.size >= 6) { g.disconnect(); return@post }
                 val p = Peer(g, c, mtus[g.device.address] ?: 23); peers[g.device.address] = p; connecting.remove(g.device.address)
-                store.forEach { enqueue(p, it.second) }; onPeers(peers.size); h.postDelayed({ announce() }, 1500)
+                store.snapshot().forEach { enqueue(p, it) }; onPeers(peers.size); h.postDelayed({ announce() }, 1500)
             }
         }
         override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, st: Int) {
-            h.post { peers[g.device.address]?.let { it.busy = false; pump(it) } }
+            h.post {
+                peers[g.device.address]?.takeIf { it.g === g }?.let {
+                    val success = st == BluetoothGatt.GATT_SUCCESS
+                    if (!it.writeGate.complete(success)) return@let
+                    if (success) pump(it)
+                    else {
+                        it.q.clear()
+                        onTransportStatus("Bluetooth : écriture échouée, livraison non confirmée")
+                        runCatching { g.disconnect() }
+                    }
+                }
+            }
         }
     }
 }

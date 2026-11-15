@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Maillage – écrivez sans réseau</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1f6;--ink:#101828;--mute:#566474;--line:#cfd7e0;--sig:#4b3fe0;--sig2:#e6e3ff;--pan:#fff;--on:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1620;--ink:#e8eef5;--mute:#93a1b0;--line:#263443;--sig:#9a92ff;--sig2:#25224f;--pan:#17212c;--on:#0f1620}}
+:root[data-theme="dark"]{--bg:#0f1620;--ink:#e8eef5;--mute:#93a1b0;--line:#263443;--sig:#9a92ff;--sig2:#25224f;--pan:#17212c;--on:#0f1620}
+html{scroll-padding-top:env(safe-area-inset-top,0px);scroll-behavior:smooth}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 17px/1.55 "Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:inherit}
+.w{max-width:980px;margin:0 auto;padding:0 20px}
+nav{display:flex;justify-content:space-between;align-items:center;padding:16px 0}
+.logo{font-weight:800;font-size:21px;letter-spacing:-.02em;text-decoration:none}
+.btn{display:inline-block;padding:12px 20px;border-radius:12px;background:var(--sig);color:var(--on);font-weight:600;text-decoration:none}
+.btn.o{background:none;color:var(--ink);border:1.5px solid var(--line)}
+.btn:focus-visible,a:focus-visible{outline:3px solid var(--sig);outline-offset:3px}
+.hero{display:grid;gap:28px;align-items:center;padding:28px 0 56px}
+@media(min-width:800px){.hero{grid-template-columns:1.1fr .9fr}}
+h1{font-size:clamp(40px,8vw,68px);line-height:1.02;letter-spacing:-.035em;margin:0 0 16px;font-weight:800}
+.hero p{color:var(--mute);max-width:46ch;margin:0 0 24px;font-size:18px}
+.cta{display:flex;gap:10px;flex-wrap:wrap}
+svg.mesh{width:100%;height:auto}
+.ring{fill:none;stroke:var(--sig);stroke-width:3;opacity:0;transform-box:fill-box;transform-origin:center;animation:hop 7s infinite;animation-delay:var(--d)}
+@keyframes hop{0%{opacity:0;transform:scale(.6)}3%{opacity:1}13%{opacity:0;transform:scale(1.9)}100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.ring{animation:none}}
+section{padding:44px 0;border-top:1px solid var(--line)}
+h2{font-size:clamp(26px,4.5vw,36px);letter-spacing:-.025em;margin:0 0 22px;line-height:1.1}
+.steps{display:grid;gap:18px;counter-reset:s;padding:0;list-style:none;margin:0}
+@media(min-width:800px){.steps{grid-template-columns:repeat(3,1fr)}}
+.steps li{counter-increment:s;padding-left:46px;position:relative}
+.steps li::before{content:counter(s);position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:var(--sig);color:var(--on);display:grid;place-items:center;font-weight:800}
+.steps b{display:block;margin-bottom:2px}
+.steps span,.feat span{color:var(--mute)}
+.feat{display:grid;gap:0 40px}
+@media(min-width:800px){.feat{grid-template-columns:1fr 1fr}}
+.feat div{padding:16px 0;border-bottom:1px solid var(--line)}
+.feat b{display:block;font-size:19px}
+.demo{display:grid;gap:32px;align-items:center}
+@media(min-width:800px){.demo{grid-template-columns:1fr 300px}}
+.phone{width:290px;max-width:100%;margin:0 auto;border:8px solid var(--ink);border-radius:34px;overflow:hidden;background:var(--bg)}
+.ph-h{background:var(--sig);color:var(--on);padding:18px 16px 12px}
+.ph-h b{font-size:20px;display:block;line-height:1.1}.ph-h small{opacity:.85}
+.ph-b{padding:14px 10px 18px;display:flex;flex-direction:column;gap:8px}
+.bb{max-width:82%;padding:8px 12px;border-radius:16px;background:var(--pan);border:1px solid var(--line);font-size:14.5px;line-height:1.35}
+.bb i{display:block;font-style:normal;font-size:11px;color:var(--mute);margin-top:2px}
+.bb b{display:block;font-size:12.5px;color:var(--sig)}
+.bb.me{align-self:flex-end;background:var(--sig);color:var(--on);border-color:transparent}
+.bb.me i{color:inherit;opacity:.8}
+.ph-c{display:flex;gap:6px;padding:8px 10px 12px;border-top:1px solid var(--line)}
+.ph-c span{flex:1;border:1px solid var(--line);background:var(--pan);border-radius:12px;padding:8px 10px;font-size:13px;color:var(--mute)}
+.ph-c em{background:var(--sig);color:var(--on);border-radius:12px;padding:8px 12px;font-style:normal;font-size:13px;font-weight:600}
+ol.ins{padding-left:22px;margin:0 0 20px}ol.ins li{margin:6px 0}
+.note{color:var(--mute);font-size:15px}
+footer{padding:28px 0 40px;color:var(--mute);font-size:14px;border-top:1px solid var(--line)}
+</style></head><body>
+<div class="w">
+<nav><a class="logo" href="#">Maillage</a><a class="btn" href="#installer">Installer</a></nav>
+<div class="hero">
+<div>
+<h1>Écrivez sans réseau.</h1>
+<p>Maillage relie les téléphones entre eux par Bluetooth. Chaque téléphone relaie les messages des autres : pas d’internet, pas de forfait, pas de compte.</p>
+<div class="cta"><a class="btn" href="#installer">Installer sur Android</a><a class="btn o" href="#principe">Voir le principe</a></div>
+</div>
+<svg class="mesh" viewBox="0 0 360 300" role="img" aria-label="Un message qui se propage de téléphone en téléphone">
+<g stroke="var(--line)" stroke-width="2">
+<line x1="60" y1="150" x2="140" y2="70"/><line x1="60" y1="150" x2="130" y2="230"/><line x1="140" y1="70" x2="240" y2="100"/><line x1="130" y1="230" x2="230" y2="210"/><line x1="240" y1="100" x2="230" y2="210"/><line x1="240" y1="100" x2="310" y2="40"/><line x1="230" y1="210" x2="315" y2="170"/><line x1="140" y1="70" x2="130" y2="230" stroke-dasharray="4 5"/></g>
+<g id="ns"></g></svg>
+</div>
+<section id="principe"><h2>Comment ça marche</h2>
+<ol class="steps">
+<li><b>Choisis un mot de passe</b><span>Les personnes qui le connaissent lisent le canal. Pour les autres, c’est illisible.</span></li>
+<li><b>Les téléphones se trouvent</b><span>Dès qu’ils sont à portée, ils se connectent tout seuls en Bluetooth.</span></li>
+<li><b>Le message saute</b><span>De téléphone en téléphone, jusqu’à 7 sauts, pour aller bien plus loin que la portée d’un seul.</span></li>
+</ol></section>
+<section><h2>Pensé pour les endroits sans réseau</h2>
+<div class="feat">
+<div><b>Aucun réseau requis</b><span>Festival, randonnée, panne, métro : ça marche sans antenne ni Wi-Fi.</span></div>
+<div><b>Messages chiffrés</b><span>Les messages sont chiffrés avec le mot de passe du canal avant de quitter ton téléphone.</span></div>
+<div><b>Rien n’est perdu</b><span>Un message est gardé 1 h et rejoué aux téléphones qui arrivent après.</span></div>
+<div><b>Aucun compte</b><span>Ni numéro, ni e-mail. Un pseudo suffit.</span></div>
+</div></section>
+<section><h2>L’app, de près</h2>
+<div class="demo">
+<div><p class="note" style="font-size:17px;color:var(--ink)">Un seul écran : le canal, les messages et leur nombre de sauts. Ce que tu vois ici est la même interface que dans l’app Android.</p></div>
+<div class="phone"><div class="ph-h"><b>Maillage</b><small>En ligne · 3 voisins connectés</small></div>
+<div class="ph-b">
+<div class="bb"><b>Inès</b>On est au point de départ !<i>2 sauts</i></div>
+<div class="bb"><b>Malo</b>Reçu, j’arrive dans 5 min.<i>direct</i></div>
+<div class="bb me">Parfait, je vous vois sur la carte<i>envoyé</i></div>
+<div class="bb"><b>Zoé</b>Le signal passe bien ici.<i>4 sauts</i></div>
+</div><div class="ph-c"><span>Message</span><em>Envoyer</em></div></div>
+</div></section>
+<section id="installer"><h2>Installer</h2>
+<ol class="ins">
+<li>Mets le projet sur GitHub et lance « Build APK » dans l’onglet Actions.</li>
+<li>Télécharge l’APK obtenu (Artifacts) sur ton téléphone Android.</li>
+<li>Autorise l’installation d’applications inconnues, puis ouvre l’APK.</li>
+<li>Active le Bluetooth, choisis un pseudo et le même mot de passe que tes amis.</li>
+</ol>
+<p class="note">iPhone : version en préparation. Les deux plateformes utiliseront le même protocole pour se parler.</p></section>
+<footer>Maillage, version 0.1. Garde l’app ouverte au premier plan pour relayer les messages.</footer>
+</div>
+<script>
+const P=[[60,150,"Toi"],[140,70,"In"],[130,230,"Ma"],[240,100,"Zo"],[230,210,"Ka"],[310,40,"Sa"],[315,170,"Lo"]],D=[0,.9,.9,1.8,1.8,2.7,2.7];
+document.getElementById("ns").innerHTML=P.map((p,i)=>`<circle class="ring" cx="${p[0]}" cy="${p[1]}" r="22" style="--d:${D[i]}s"/><circle cx="${p[0]}" cy="${p[1]}" r="17" fill="${i?"var(--pan)":"var(--sig)"}" stroke="var(--sig)" stroke-width="2.5"/><text x="${p[0]}" y="${p[1]+4}" text-anchor="middle" font-size="11" font-weight="700" fill="${i?"var(--ink)":"var(--on)"}">${p[2]}</text>`).join("");
+</script></body></html>

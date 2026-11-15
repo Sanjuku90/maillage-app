@@ -1,0 +1,5 @@
+<resources>
+<color name="bg">#F1F4F7</color><color name="surface">#FFFFFF</color><color name="ink">#14202B</color>
+<color name="mute">#6B7885</color><color name="accent">#4B3FE0</color><color name="onAccent">#FFFFFF</color>
+<color name="bubbleIn">#FFFFFF</color><color name="ok">#127A55</color>
+</resources>

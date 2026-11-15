@@ -1,0 +1,82 @@
+name: Build PC
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: Windows
+            executable: desktop/dist/Maillage-PC/Maillage-PC.exe
+          - os: ubuntu-24.04
+            platform: Linux
+            executable: desktop/dist/Maillage-PC/Maillage-PC
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Installer Java pour les tests d’interopérabilité
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Installer les bibliothèques graphiques Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk tk-dev
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.11'
+          cache: pip
+          cache-dependency-path: desktop/requirements.txt
+      - name: Installer les dépendances
+        run: |
+          python -m pip install -r desktop/requirements.txt
+          python -m pip install pyinstaller==6.16.0
+          python -m pip check
+          python -c "import argon2, bleak, coincurve, cryptography, python_socks, websocket, tkinter, shutil; assert shutil.which('javac'), 'JDK compiler missing'"
+      - name: Exécuter les tests unitaires
+        working-directory: desktop
+        run: python -m unittest discover -s tests -v
+      - name: Construire le programme PC
+        working-directory: desktop
+        run: python -m PyInstaller --noconfirm --clean --windowed --onedir --collect-submodules bleak --name Maillage-PC main.py
+      - name: Tester l’exécutable empaqueté sans réseau
+        run: python scripts/smoke_desktop.py "${{ matrix.executable }}"
+      - name: Préparer une archive et son empreinte SHA-256
+        run: python scripts/package_desktop.py "${{ matrix.platform }}" desktop/dist/Maillage-PC output-desktop
+      - name: Enregistrer les versions et le commit
+        shell: bash
+        run: |
+          printf 'Commit: %s\nWorkflow run: %s\nPython: %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$(python --version)" > output-desktop/BUILD-INFO.txt
+          python -m pip freeze > output-desktop/DEPENDENCIES.txt
+      - name: Publier le programme PC
+        uses: actions/upload-artifact@v4
+        with:
+          name: Maillage-PC-${{ matrix.platform }}-${{ github.sha }}
+          path: output-desktop/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Résumé
+        if: always()
+        shell: bash
+        run: |
+          echo '## PC ${{ matrix.platform }}' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Le test intégré vérifie les dépendances et la crypto hors ligne, pas les connexions radio ou Nostr réelles.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Les exécutables sont expérimentaux et ne sont pas signés.' >> "$GITHUB_STEP_SUMMARY"

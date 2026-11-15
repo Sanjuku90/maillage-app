@@ -1,0 +1,26 @@
+# Build outputs
+.gradle/
+**/build/
+**/dist/
+output-android/
+output-signed/
+output-desktop/
+*.spec
+__pycache__/
+*.py[cod]
+.venv/
+local.properties
+
+# Never commit signing material
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+
+# Generated Microsoft Store packages
+msix-stage/
+msix-verification/
+output-store/
+*.msix

@@ -9,8 +9,10 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.util.Base64
 import android.os.Bundle
 import android.text.InputFilter
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -21,7 +23,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
-class Msg(val name: String, val text: String, val hops: Int, val me: Boolean, val time: Long)
+class Msg(val name: String, val text: String, val hops: Int, val me: Boolean, val time: Long, val chat: String = "")
 
 class MainActivity : Activity() {
     private val MP = ViewGroup.LayoutParams.MATCH_PARENT
@@ -39,6 +41,19 @@ class MainActivity : Activity() {
     private lateinit var nameF: EditText
     private lateinit var pwF: EditText
     private lateinit var input: EditText
+    private lateinit var idV: TextView
+    private lateinit var chipsRow: LinearLayout
+    private lateinit var awareCheck: CheckBox
+    private lateinit var nostrCheck: CheckBox
+    private lateinit var torCheck: CheckBox
+    private lateinit var transportStatus: TextView
+    private var torManager: TorManager? = null
+    private var cur = ""
+    private var shown: List<Msg> = emptyList()
+    private var people: List<Person> = emptyList()
+    private val unread = HashMap<String, Int>()
+    private val names = HashMap<String, String>()
+    private fun dec(s: String?) = try { if (s.isNullOrEmpty()) "" else Vault.dec(s) } catch (e: Exception) { "" }
 
     private fun c(id: Int) = getColor(id)
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -49,11 +64,11 @@ class MainActivity : Activity() {
     }
 
     private val bubbles = object : BaseAdapter() {
-        override fun getCount() = msgs.size
-        override fun getItem(i: Int) = msgs[i]
+        override fun getCount() = shown.size
+        override fun getItem(i: Int) = shown[i]
         override fun getItemId(i: Int) = i.toLong()
         override fun getView(i: Int, cv: View?, p: ViewGroup): View {
-            val m = msgs[i]
+            val m = shown[i]
             val maxW = (resources.displayMetrics.widthPixels * 0.72).toInt()
             val row = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(3), dp(12), dp(3))
@@ -65,7 +80,7 @@ class MainActivity : Activity() {
             }
             if (!m.me) b.addView(tv(m.name, 12f, Color.HSVToColor(floatArrayOf(((m.name.hashCode() and 0x7fffffff) % 360).toFloat(), 0.55f, 0.75f)), true).apply { maxWidth = maxW })
             b.addView(tv(m.text, 16f, if (m.me) c(R.color.onAccent) else c(R.color.ink)).apply { maxWidth = maxW })
-            val meta = fmt.format(Date(m.time)) + if (m.me) "" else " · " + (if (m.hops == 0) "direct" else "${m.hops} saut${if (m.hops > 1) "s" else ""}")
+            val meta = fmt.format(Date(m.time)) + (if (m.me) "" else " · " + (if (m.hops == 0) "direct" else "${m.hops} saut${if (m.hops > 1) "s" else ""}")) + (if (m.chat.isNotEmpty()) " · 🔒" else "")
             b.addView(tv(meta, 11f, if (m.me) 0xCCFFFFFF.toInt() else c(R.color.mute)).apply { gravity = Gravity.END })
             row.addView(b)
             return row
@@ -87,16 +102,41 @@ class MainActivity : Activity() {
             hint = h; setText(v); setSingleLine(); setTextColor(c(R.color.ink)); setHintTextColor(c(R.color.mute))
             background = round(c(R.color.surface), 14); setPadding(dp(16), dp(14), dp(16), dp(14))
         }
-        nameF = field("Ton pseudo", prefs.getString("name", "") ?: "")
-        pwF = field("Mot de passe du canal", prefs.getString("pw", "") ?: "")
+        nameF = field("Ton pseudo (12 max)", prefs.getString("name", "") ?: "").apply { filters = arrayOf(InputFilter.LengthFilter(12)) }
+        pwF = field("Mot de passe du canal (8 caractères min.)", dec(prefs.getString("pw", null))).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            typeface = Typeface.DEFAULT
+        }
+        awareCheck = CheckBox(this).apply {
+            text = "Wi-Fi Aware local (si compatible)"; isChecked = prefs.getBoolean("aware", true)
+            setTextColor(c(R.color.ink)); isEnabled = packageManager.hasSystemFeature("android.hardware.wifi.aware")
+            if (!isEnabled) isChecked = false
+        }
+        nostrCheck = CheckBox(this).apply {
+            text = "Relais Nostr sur Internet"; isChecked = prefs.getBoolean("nostr", false); setTextColor(c(R.color.ink))
+        }
+        torCheck = CheckBox(this).apply {
+            text = "Forcer Nostr via Tor (plus lent)"; isChecked = prefs.getBoolean("tor", false); setTextColor(c(R.color.ink)); isEnabled = nostrCheck.isChecked
+        }
+        nostrCheck.setOnCheckedChangeListener { _, enabled ->
+            torCheck.isEnabled = enabled
+            if (!enabled) torCheck.isChecked = false
+        }
         val go = tv("Rejoindre le maillage", 16f, c(R.color.onAccent), true).apply {
             gravity = Gravity.CENTER; setPadding(0, dp(14), 0, dp(14)); background = round(c(R.color.accent), 14); setOnClickListener { tryJoin() }
         }
         l.put(tv("Maillage", 34f, c(R.color.ink), true))
-        l.put(tv("Messagerie sans internet, de téléphone en téléphone par Bluetooth.", 15f, c(R.color.mute)), 6)
-        l.put(nameF, 32); l.put(pwF, 12); l.put(go, 20)
-        l.put(tv("Tous les téléphones du groupe doivent utiliser le même mot de passe. Il chiffre les messages.", 13f, c(R.color.mute)), 14)
-        return l
+        l.put(tv("Messages de téléphone en téléphone, avec ou sans Internet.", 15f, c(R.color.mute)), 6)
+        l.put(nameF, 24); l.put(pwF, 10)
+        l.put(awareCheck, 10); l.put(nostrCheck, 2); l.put(torCheck, 2)
+        l.put(tv("Les relais voient une clé publique, les heures et l’identifiant du canal, mais reçoivent des trames chiffrées. Tor est facultatif.", 12f, c(R.color.mute)), 4)
+        l.put(go, 16)
+        l.put(tv("Tester le chiffrement", 14f, c(R.color.accent)).apply { setOnClickListener { Thread { val r = SelfTest.run(); runOnUiThread { android.app.AlertDialog.Builder(this@MainActivity).setMessage(r).setPositiveButton("OK", null).show() } }.start() } }, 18)
+        l.put(tv("Même mot de passe du canal sur tous les téléphones. Choisis-en un long et unique.", 13f, c(R.color.mute)), 10)
+        l.put(tv("Effacer toutes les données de Maillage", 13f, c(R.color.mute)).apply {
+            setOnClickListener { confirmReset() }
+        }, 22)
+        return ScrollView(this).apply { isFillViewport = true; addView(l) }
     }
 
     private fun buildChat(): View {
@@ -105,8 +145,18 @@ class MainActivity : Activity() {
         bar.addView(tv("Maillage", 22f, c(R.color.ink), true), LinearLayout.LayoutParams(0, WC, 1f))
         pill = tv("", 13f, c(R.color.mute)).apply { setPadding(dp(12), dp(6), dp(12), dp(6)); background = round(c(R.color.surface), 16) }
         bar.addView(pill)
+        bar.addView(tv("Effacer", 14f, c(R.color.mute)).apply { setPadding(dp(10), dp(6), 0, dp(6)); setOnClickListener { msgs.removeAll { it.chat == cur }; save(); refresh() } })
         bar.addView(tv("Quitter", 14f, c(R.color.accent)).apply { setPadding(dp(14), dp(6), 0, dp(6)); setOnClickListener { leave() } })
         l.addView(bar)
+        idV = tv("", 12f, c(R.color.mute)).apply { setPadding(dp(16), 0, dp(16), dp(4)) }
+        l.addView(idV)
+        l.addView(tv("Réinitialiser Maillage", 12f, c(R.color.mute)).apply {
+            setPadding(dp(16), 0, dp(16), dp(4)); setOnClickListener { confirmReset() }
+        })
+        transportStatus = tv("", 12f, c(R.color.mute)).apply { setPadding(dp(16), 0, dp(16), dp(4)) }
+        l.addView(transportStatus)
+        chipsRow = LinearLayout(this).apply { setPadding(dp(16), dp(4), dp(16), dp(8)) }
+        l.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chipsRow) })
         val fl = FrameLayout(this)
         list = ListView(this).apply {
             divider = null; dividerHeight = 0; clipToPadding = false; setPadding(0, dp(4), 0, dp(8))
@@ -119,7 +169,7 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(10)) }
         input = EditText(this).apply {
             hint = "Message"; setHintTextColor(c(R.color.mute)); setTextColor(c(R.color.ink)); maxLines = 4
-            background = round(c(R.color.surface), 24); setPadding(dp(16), dp(10), dp(16), dp(10)); filters = arrayOf(InputFilter.LengthFilter(200))
+            background = round(c(R.color.surface), 24); setPadding(dp(16), dp(10), dp(16), dp(10)); filters = arrayOf(InputFilter.LengthFilter(100))
         }
         row.addView(input, LinearLayout.LayoutParams(0, WC, 1f))
         row.addView(tv("↑", 22f, c(R.color.onAccent), true).apply { gravity = Gravity.CENTER; background = round(c(R.color.accent), 24); setOnClickListener { send() } },
@@ -128,45 +178,122 @@ class MainActivity : Activity() {
         return l
     }
 
-    private fun perms() = if (Build.VERSION.SDK_INT >= 31)
-        arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
-    else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    private fun perms(): Array<String> {
+        val requested = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= 31) {
+            requested += listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
+        } else requested += Manifest.permission.ACCESS_FINE_LOCATION
+        if (awareCheck.isChecked) {
+            if (Build.VERSION.SDK_INT >= 33) requested += Manifest.permission.NEARBY_WIFI_DEVICES
+            else if (Build.VERSION.SDK_INT >= 31) requested += Manifest.permission.ACCESS_FINE_LOCATION
+        }
+        return requested.distinct().toTypedArray()
+    }
 
     private fun tryJoin() {
-        if (pwF.text.toString().length < 4) return toast("Mot de passe : 4 caractères minimum")
+        if (pwF.text.toString().length < 8) return toast("Mot de passe : 8 caractères minimum")
         if (perms().all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) begin() else requestPermissions(perms(), 1)
     }
 
     override fun onRequestPermissionsResult(c: Int, p: Array<out String>, r: IntArray) {
-        if (r.isNotEmpty() && r.all { it == PackageManager.PERMISSION_GRANTED }) begin() else toast("Permissions Bluetooth refusées")
+        super.onRequestPermissionsResult(c, p, r)
+        if (c != 1) return
+        val bluetooth = if (Build.VERSION.SDK_INT >= 31) listOf(
+            Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT
+        ) else listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (!bluetooth.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
+            toast("Permissions Bluetooth refusées")
+            return
+        }
+        if (awareCheck.isChecked) {
+            val awarePermission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES
+                                  else Manifest.permission.ACCESS_FINE_LOCATION
+            if (checkSelfPermission(awarePermission) != PackageManager.PERMISSION_GRANTED) {
+                awareCheck.isChecked = false
+                toast("Wi-Fi Aware désactivé, le Bluetooth reste actif")
+            }
+        }
+        begin()
     }
 
     private fun begin() {
         val bt = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
         if (bt == null || !bt.isEnabled) return toast("Active le Bluetooth")
-        myName = nameF.text.toString().trim().ifBlank { "Anon" + (100..999).random() }
+        myName = nameF.text.toString().replace("#", "").trim().ifBlank { "Anon" + (100..999).random() }
         val pw = pwF.text.toString()
-        prefs.edit().putString("name", myName).putString("pw", pw).apply()
-        load(pw.hashCode().toString()); bubbles.notifyDataSetChanged(); list.setSelection(msgs.size)
+        prefs.edit().putString("name", myName).putString("pw", Vault.enc(pw))
+            .putBoolean("aware", awareCheck.isChecked).putBoolean("nostr", nostrCheck.isChecked).putBoolean("tor", torCheck.isChecked).apply()
+        if (nostrCheck.isChecked && torCheck.isChecked) {
+            startJoined(pw, null, false)
+            transportStatus.text = "Tor démarre… le BLE et Wi-Fi Aware restent actifs"
+            val activeMesh = mesh ?: return
+            val manager = TorManager(this); torManager = manager
+            Thread {
+                val port = runCatching { manager.startAndWait() }
+                runOnUiThread {
+                    if (mesh !== activeMesh) { manager.stop(); return@runOnUiThread }
+                    if (port.isSuccess) {
+                        activeMesh.enableNostr(nostrKey(), port.getOrNull())
+                        transportStatus.text = "Tor prêt; relais Nostr forcés via Tor"
+                    } else {
+                        manager.stop(); torManager = null
+                        transportStatus.text = "Tor indisponible; Internet désactivé, aucun repli direct"
+                    }
+                }
+            }.start()
+        } else startJoined(pw, null, nostrCheck.isChecked)
+    }
+
+    private fun startJoined(pw: String, torPort: Int?, internetEnabled: Boolean) {
+        load(pw.hashCode().toString())
+        names.clear(); unread.clear(); msgs.filter { it.chat.isNotEmpty() && !it.me }.forEach { names[it.chat] = it.name }
         mesh?.stop()
-        mesh = Mesh(this, myName, pw, { n, t, h -> add(Msg(n, t, h, false, System.currentTimeMillis())) }, { setPeers(it) }).also { it.start() }
-        setPeers(0)
+        val secret = if (internetEnabled) nostrKey() else null
+        mesh = Mesh(this, myName, pw, noiseKey(),
+            { n, t, h -> add(Msg(n, t, h, false, System.currentTimeMillis(), "")) },
+            { tg, who, t, h -> names[tg] = who; add(Msg(who, t, h, false, System.currentTimeMillis(), tg)) },
+            { p -> people = p; chips() },
+            { setPeers(it) },
+            enableWifiAware = awareCheck.isChecked,
+            nostrSecretHex = secret,
+            torSocksPort = torPort,
+            onTransportStatus = { status -> runOnUiThread { transportStatus.text = status } }
+        ).also { it.start() }
+        idV.text = "Ton identifiant : $myName#${mesh!!.tag}"
+        transportStatus.text = if (internetEnabled) "Internet : relais Nostr" else "Internet : désactivé"
+        setPeers(0); cur = ""; refresh(); chips()
         joinV.visibility = View.GONE; chatV.visibility = View.VISIBLE
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     private fun leave() {
         mesh?.stop(); mesh = null
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        torManager?.stop(); torManager = null
         chatV.visibility = View.GONE; joinV.visibility = View.VISIBLE
+    }
+
+    private fun confirmReset() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Effacer les données locales ?")
+            .setMessage("Cela arrête Maillage et supprime l’historique, les mots de passe et les identités enregistrés sur ce téléphone. C’est irréversible et ne supprime rien chez les destinataires ni sur les relais.")
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Tout effacer") { _, _ ->
+                leave()
+                msgs.clear(); people = emptyList(); names.clear(); unread.clear(); cur = ""
+                val prefsCleared = prefs.edit().clear().commit()
+                val identityRemoved = runCatching { Ident.reset() }.isSuccess
+                val vaultRemoved = runCatching { Vault.reset() }.isSuccess
+                nameF.setText(""); pwF.setText(""); refresh()
+                toast(if (prefsCleared && identityRemoved && vaultRemoved) "Données locales supprimées" else "Effacement incomplet : réessaie")
+            }.show()
     }
 
     private fun send() {
         val t = input.text.toString().trim()
         val now = System.currentTimeMillis()
         if (t.isEmpty() || now - lastSend < 800) return
-        if (mesh?.send(t) == true) { add(Msg(myName, t, 0, true, now)); input.setText(""); lastSend = now }
-        else toast("Message trop long")
+        val ok = if (cur == "") mesh?.send(t) == true else mesh?.sendPrivate(cur, t) == true
+        if (ok) { add(Msg(myName, t, 0, true, now, cur)); input.setText(""); lastSend = now }
+        else toast(if (cur == "") "Message trop long ou erreur d’envoi" else "Contact hors ligne ou message trop long")
     }
 
     private fun setPeers(n: Int) {
@@ -174,25 +301,66 @@ class MainActivity : Activity() {
         pill.setTextColor(if (n > 0) c(R.color.ok) else c(R.color.mute))
     }
 
-    private fun add(m: Msg) { msgs.add(m); save(); bubbles.notifyDataSetChanged(); list.setSelection(msgs.size - 1) }
+    private fun add(m: Msg) {
+        msgs.add(m); save()
+        if (m.chat != cur && !m.me) { unread[m.chat] = (unread[m.chat] ?: 0) + 1; chips() }
+        refresh()
+    }
+
+    private fun refresh() {
+        shown = msgs.filter { it.chat == cur }
+        input.hint = if (cur == "") "Message au canal" else "Message privé 🔒"
+        bubbles.notifyDataSetChanged(); list.setSelection(shown.size)
+    }
+
+    private fun chips() {
+        chipsRow.removeAllViews()
+        fun chip(id: String, label: String) {
+            val n = unread[id] ?: 0; val sel = id == cur
+            chipsRow.addView(tv(label + if (n > 0) " ($n)" else "", 14f, if (sel) c(R.color.onAccent) else c(R.color.ink)).apply {
+                setPadding(dp(14), dp(7), dp(14), dp(7)); background = round(if (sel) c(R.color.accent) else c(R.color.surface), 18)
+                setOnClickListener { cur = id; unread.remove(id); chips(); refresh() }
+            }, LinearLayout.LayoutParams(WC, WC).apply { rightMargin = dp(8) })
+        }
+        chip("", "Canal")
+        people.forEach { names[it.tag] = it.name + "#" + it.tag; chip(it.tag, it.name + "#" + it.tag) }
+        val on = people.map { it.tag }.toSet()
+        names.keys.filter { it !in on && (msgs.any { m -> m.chat == it } || it == cur) }.forEach { chip(it, (names[it] ?: it) + " (hors ligne)") }
+    }
+
+    private fun nostrKey(): String {
+        val saved = dec(prefs.getString("nostr_key", null))
+        if (saved.isNotEmpty()) return saved
+        val key = NostrRelayTransport.newSecretHex()
+        prefs.edit().putString("nostr_key", Vault.enc(key)).apply()
+        return key
+    }
+
+    private fun noiseKey(): ByteArray {
+        val s = dec(prefs.getString("nk", null))
+        if (s.isNotEmpty()) return Base64.decode(s, Base64.NO_WRAP)
+        val k = Dh.gen().first
+        prefs.edit().putString("nk", Vault.enc(Base64.encodeToString(k, Base64.NO_WRAP))).apply()
+        return k
+    }
 
     private fun load(chan: String) {
         msgs.clear()
-        if (prefs.getString("chan", "") == chan) {
+        if (dec(prefs.getString("chan", null)) == chan) {
             try {
-                val a = JSONArray(prefs.getString("hist", "[]"))
-                for (i in 0 until a.length()) { val o = a.getJSONObject(i); msgs.add(Msg(o.getString("n"), o.getString("t"), o.getInt("h"), o.getBoolean("m"), o.getLong("s"))) }
+                val a = JSONArray(dec(prefs.getString("hist", null)).ifEmpty { "[]" })
+                for (i in 0 until a.length()) { val o = a.getJSONObject(i); msgs.add(Msg(o.getString("n"), o.getString("t"), o.getInt("h"), o.getBoolean("m"), o.getLong("s"), o.optString("c"))) }
             } catch (e: Exception) { }
-        } else prefs.edit().putString("chan", chan).putString("hist", "[]").apply()
+        } else prefs.edit().putString("chan", Vault.enc(chan)).putString("hist", Vault.enc("[]")).apply()
     }
 
     private fun save() {
         val a = JSONArray()
-        msgs.takeLast(200).forEach { a.put(JSONObject().put("n", it.name).put("t", it.text).put("h", it.hops).put("m", it.me).put("s", it.time)) }
-        prefs.edit().putString("hist", a.toString()).apply()
+        msgs.takeLast(200).forEach { a.put(JSONObject().put("n", it.name).put("t", it.text).put("h", it.hops).put("m", it.me).put("s", it.time).put("c", it.chat)) }
+        prefs.edit().putString("hist", Vault.enc(a.toString())).apply()
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
     override fun onBackPressed() { if (chatV.visibility == View.VISIBLE) moveTaskToBack(true) else super.onBackPressed() }
-    override fun onDestroy() { mesh?.stop(); super.onDestroy() }
+    override fun onDestroy() { mesh?.stop(); torManager?.stop(); super.onDestroy() }
 }

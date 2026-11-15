@@ -1,0 +1,3 @@
+-dontwarn org.bouncycastle.**
+-keep class info.guardianproject.arti.** { *; }
+-keep class fr.acinq.secp256k1.** { *; }

@@ -2,6 +2,14 @@
 
 Messagerie de groupe chiffrée avec trois voies de transport: Bluetooth LE mesh, Wi-Fi Aware local optionnel, et relais Nostr sur Internet. Tor est optionnel pour le trafic Nostr.
 
+## Ouverture et reconnexion Android
+
+Au lancement, un logo maillé animé apparaît, sans barre de chargement, puis disparaît en fondu. Le bouton « Passer » permet de passer l'animation. Si les animations système sont désactivées, elle est ignorée.
+
+Quand une configuration a déjà été enregistrée, l'application tente de rejoindre automatiquement le canal si son mot de passe est disponible, que toutes les autorisations nécessaires sont déjà accordées et que le Bluetooth est activé. Les options de transport enregistrées sont réutilisées, y compris Nostr et Tor si elles étaient activées. Dans le cas contraire, ou si le démarrage automatique échoue, l'écran de configuration existant est affiché. Aucune autorisation n'est demandée et le Bluetooth n'est pas activé automatiquement. « Quitter » arrête les transports, mais un prochain lancement pourra les redémarrer avec les réglages enregistrés ; la réinitialisation locale les efface.
+
+Cette modification Android a été préparée à partir du code source sans compilation ni test sur appareil : vérifier le build GitHub Actions et tester les autorisations, la reprise, le passage en arrière-plan, Tor et les différents appareils avant diffusion. Le prototype d'interface web n'a pas été porté dans l'application Android.
+
 ## Fonctionnalités incluses
 
 - **BLE mesh**: découverte et relais multi-sauts, plafond de 16 sauts (ce n’est pas une garantie de portée), fragmentation/réassemblage quand le MTU BLE est petit, déduplication et files bornées.

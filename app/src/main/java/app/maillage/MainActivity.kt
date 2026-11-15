@@ -3,6 +3,7 @@ package app.maillage
 import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothManager
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
@@ -53,6 +54,11 @@ class MainActivity : Activity() {
     private var people: List<Person> = emptyList()
     private val unread = HashMap<String, Int>()
     private val names = HashMap<String, String>()
+    private var launchSplash: LaunchSplash? = null
+    private var splashReady = false
+    private var activityResumed = false
+    private var splashStatusColor = 0
+    private var splashSystemUiVisibility = 0
     private fun dec(s: String?) = try { if (s.isNullOrEmpty()) "" else Vault.dec(s) } catch (e: Exception) { "" }
 
     private fun c(id: Int) = getColor(id)
@@ -93,7 +99,65 @@ class MainActivity : Activity() {
         val root = FrameLayout(this).apply { fitsSystemWindows = true }
         joinV = buildJoin(); chatV = buildChat().apply { visibility = View.GONE }
         root.addView(joinV); root.addView(chatV)
+        joinV.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        chatV.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        splashStatusColor = window.statusBarColor
+        splashSystemUiVisibility = window.decorView.systemUiVisibility
+        window.statusBarColor = Color.rgb(22, 29, 50)
+        window.decorView.systemUiVisibility = splashSystemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        val splash = LaunchSplash(this) {
+            splashReady = true
+            finishLaunchWhenResumed()
+        }
+        launchSplash = splash
+        root.addView(splash, FrameLayout.LayoutParams(MP, MP))
         setContentView(root)
+        splash.start()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        activityResumed = true
+        finishLaunchWhenResumed()
+    }
+
+    override fun onPause() {
+        activityResumed = false
+        super.onPause()
+    }
+
+    private fun finishLaunchWhenResumed() {
+        val splash = launchSplash ?: return
+        if (!activityResumed || !splashReady || isFinishing || isDestroyed) return
+        splashReady = false
+        tryAutoRejoin()
+        splash.fadeOut {
+            (splash.parent as? ViewGroup)?.removeView(splash)
+            if (launchSplash === splash) launchSplash = null
+            joinV.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+            chatV.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+            window.statusBarColor = splashStatusColor
+            window.decorView.systemUiVisibility = splashSystemUiVisibility
+        }
+    }
+
+    private fun tryAutoRejoin() {
+        // Only reuse a previously saved choice. Missing prerequisites fall back to the
+        // original join screen without requesting permissions or enabling Bluetooth.
+        val savedChannel = prefs.contains("name") && pwF.text.toString().length >= 8
+        val permissionsGranted = perms().all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+        val bluetoothEnabled = if (permissionsGranted) {
+            runCatching { (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.isEnabled == true }.getOrDefault(false)
+        } else false
+        if (!RejoinPolicy.shouldRejoin(savedChannel, permissionsGranted, bluetoothEnabled)) return
+        runCatching { begin() }.onFailure {
+            runCatching { mesh?.stop() }
+            mesh = null
+            runCatching { stopService(Intent(this, MeshKeepaliveService::class.java)) }
+            runCatching { torManager?.stop() }; torManager = null
+            chatV.visibility = View.GONE; joinV.visibility = View.VISIBLE
+            toast("Reconnexion impossible : rejoins le canal manuellement")
+        }
     }
 
     private fun buildJoin(): View {
@@ -249,7 +313,7 @@ class MainActivity : Activity() {
         names.clear(); unread.clear(); msgs.filter { it.chat.isNotEmpty() && !it.me }.forEach { names[it.chat] = it.name }
         mesh?.stop()
         val secret = if (internetEnabled) nostrKey() else null
-        mesh = Mesh(this, myName, pw, noiseKey(),
+        val nextMesh = Mesh(this, myName, pw, noiseKey(),
             { n, t, h -> add(Msg(n, t, h, false, System.currentTimeMillis(), "")) },
             { tg, who, t, h -> names[tg] = who; add(Msg(who, t, h, false, System.currentTimeMillis(), tg)) },
             { p -> people = p; chips() },
@@ -258,7 +322,9 @@ class MainActivity : Activity() {
             nostrSecretHex = secret,
             torSocksPort = torPort,
             onTransportStatus = { status -> runOnUiThread { transportStatus.text = status } }
-        ).also { it.start() }
+        )
+        mesh = nextMesh
+        nextMesh.start()
         idV.text = "Ton identifiant : $myName#${mesh!!.tag}"
         transportStatus.text = if (internetEnabled) "Internet : relais Nostr" else "Internet : désactivé"
         setPeers(0); cur = ""; refresh(); chips()
@@ -362,5 +428,10 @@ class MainActivity : Activity() {
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
     override fun onBackPressed() { if (chatV.visibility == View.VISIBLE) moveTaskToBack(true) else super.onBackPressed() }
-    override fun onDestroy() { mesh?.stop(); torManager?.stop(); super.onDestroy() }
+    override fun onDestroy() {
+        launchSplash?.dispose()
+        launchSplash = null
+        mesh?.stop(); torManager?.stop()
+        super.onDestroy()
+    }
 }

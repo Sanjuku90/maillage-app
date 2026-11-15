@@ -122,9 +122,10 @@ class Mesh(
                 { peer, frame -> h.post { receive(frame, peer, "aware") } },
                 { status -> h.post { onTransportStatus(status) } }).also { it.start() }
         }
-        if (nostrSecretHex != null) {
+        val nostrKey = nostrSecretHex
+        if (!nostrKey.isNullOrBlank()) {
             nostr = runCatching {
-                NostrRelayTransport(nostrSecretHex, channelTag, torSocksPort,
+                NostrRelayTransport(nostrKey, channelTag, torSocksPort,
                     { frame -> h.post { receive(frame, "nostr", "nostr") } },
                     { status -> h.post { onTransportStatus(status) } }).also { it.start() }
             }.onFailure { onTransportStatus("Relais Nostr indisponible: clé invalide") }.getOrNull()
